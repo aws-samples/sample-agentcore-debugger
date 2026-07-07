@@ -1,0 +1,39 @@
+{
+  "default_model": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+  "fallback_models": [
+    "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "us.anthropic.claude-opus-4-1-20250805-v1:0",
+    "global.anthropic.claude-sonnet-4-20250514-v1:0"
+  ],
+  "available_models": [
+    {
+      "id": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "name": "Claude Sonnet 4.5",
+      "description": "Latest Claude Sonnet 4.5 model - Default primary model",
+      "status": "default"
+    },
+    {
+      "id": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "name": "Claude Haiku 4.5",
+      "description": "Claude Haiku 4.5 - Fast and efficient first fallback",
+      "status": "fallback-1"
+    },
+    {
+      "id": "us.anthropic.claude-opus-4-1-20250805-v1:0",
+      "name": "Claude Opus 4.1",
+      "description": "Claude Opus 4.1 - Second fallback for rate limits",
+      "status": "fallback-2"
+    },
+    {
+      "id": "global.anthropic.claude-sonnet-4-20250514-v1:0",
+      "name": "Claude Sonnet 4",
+      "description": "Claude Sonnet 4 - Last resort fallback",
+      "status": "fallback-3"
+    }
+  ],
+  "model_settings": {
+    "max_tokens": 4096,
+    "temperature": 0.0,
+    "timeout": 60
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "environment": "dev",
+  "aws_region": "us-east-1",
+  "alert_email": "",
+  "backend_cpu": 512,
+  "backend_memory": 1024,
+  "backend_desired_count": 1
+}

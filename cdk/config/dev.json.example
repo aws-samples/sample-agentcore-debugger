@@ -1,0 +1,10 @@
+{
+  "_comment": "Copy this file to dev.json and replace placeholders with your values",
+  "environment": "dev",
+  "aws_region": "us-east-1",
+  "admin_email": "your-email@example.com",
+  "alert_email": "your-email@example.com",
+  "backend_cpu": 512,
+  "backend_memory": 1024,
+  "backend_desired_count": 1
+}

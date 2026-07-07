@@ -1,0 +1,108 @@
+{
+  "_comment": "Replace ACCOUNT_ID with your AWS account ID before using",
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CloudWatchLogsRead",
+      "Effect": "Allow",
+      "Action": [
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams",
+        "logs:FilterLogEvents",
+        "logs:GetLogEvents"
+      ],
+      "Resource": [
+        "arn:aws:logs:*:ACCOUNT_ID:log-group:/aws/bedrock-agentcore/*",
+        "arn:aws:logs:*:ACCOUNT_ID:log-group:aws/spans/*"
+      ]
+    },
+    {
+      "_note": "CloudWatch Metrics API does not support resource-level permissions",
+      "Sid": "CloudWatchMetricsRead",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:ListMetrics"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "BedrockModelInvoke",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream"
+      ],
+      "Resource": [
+        "arn:aws:bedrock:*::foundation-model/*",
+        "arn:aws:bedrock:*:ACCOUNT_ID:inference-profile/*"
+      ]
+    },
+    {
+      "Sid": "BedrockAgentCoreAccess",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock-agentcore:GetAgentRuntime",
+        "bedrock-agentcore:ListAgentRuntimes",
+        "bedrock-agentcore:DescribeAgentRuntime",
+        "bedrock-agentcore:InvokeAgent",
+        "bedrock-agentcore:InvokeAgentRuntime",
+        "bedrock-agentcore:CreateWorkloadIdentity",
+        "bedrock-agentcore:GetWorkloadIdentity",
+        "bedrock-agentcore:UpdateWorkloadIdentity",
+        "bedrock-agentcore:DeleteWorkloadIdentity",
+        "bedrock-agentcore:GetWorkloadAccessToken"
+      ],
+      "Resource": "arn:aws:bedrock-agentcore:*:ACCOUNT_ID:*"
+    },
+    {
+      "Sid": "SecretsManagerRead",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret"
+      ],
+      "Resource": "arn:aws:secretsmanager:*:ACCOUNT_ID:secret:AgentCoreDebugger*"
+    },
+    {
+      "Sid": "ECRReadAccess",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:DescribeImages",
+        "ecr:DescribeRepositories"
+      ],
+      "Resource": "arn:aws:ecr:*:ACCOUNT_ID:repository/agentcore-*"
+    },
+    {
+      "_note": "ecr:GetAuthorizationToken does not support resource-level permissions (AWS requirement)",
+      "Sid": "ECRAuthToken",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:GetAuthorizationToken"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "S3ConfigAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Resource": "arn:aws:s3:::*/*bedrock_agentcore.yaml"
+    },
+    {
+      "Sid": "S3AgentCoreBucketAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::agentcore-agents",
+        "arn:aws:s3:::agentcore-agents/*"
+      ]
+    }
+  ]
+}

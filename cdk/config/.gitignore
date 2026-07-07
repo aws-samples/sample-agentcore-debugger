@@ -1,0 +1,3 @@
+# Ignore local overrides
+local.json
+*.local.json

@@ -1,0 +1,1 @@
+# Collectors package for AgentCore Debugger Assistant

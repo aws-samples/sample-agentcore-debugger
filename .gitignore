@@ -1,0 +1,112 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+*.docx
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# IDE / editor / tooling config (not project logic)
+.vscode/
+.idea/
+.kiro/
+.docker/
+*.swp
+*.swo
+*~
+
+# Logs
+logs/
+*.log
+agent_execution.log
+
+# AWS
+.aws/
+
+# Docker
+*.tar
+
+# Temporary files
+agentcore_fixes/
+*.tmp
+*.bak
+
+# Unused legacy code
+automation/
+
+# Internal reference files
+GIT_COMMANDS_REFERENCE.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets and Credentials
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.crt
+*.p12
+config.json
+secrets.json
+credentials.json
+*_credentials.json
+*_secrets.json
+*.token
+.gitlab-token
+.aws-credentials
+
+# Test outputs
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Frontend build
+frontend/dist/
+frontend/node_modules/
+
+# CDK
+cdk/cdk.out/
+cdk/*.js
+cdk/*.d.ts
+
+# Database
+agentcore_state.db
+*.db
+
+# Scripts (testing only, not for production)
+scripts/
+!cdk/scripts/
+
+# Documentation (internal reference only)
+.config/
+
+# Security scan output (ASH) - never commit
+.ash/
+
+# Security scan exports (vulnerability reports) - never commit
+*_vulnerabilities_*.csv
+*-vulnerabilities-*.csv

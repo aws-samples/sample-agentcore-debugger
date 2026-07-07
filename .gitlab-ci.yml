@@ -1,0 +1,218 @@
+# GitLab managed security scanners — these produce the report artifacts
+# (dependency scanning, SAST incl. Advanced SAST, and IaC/Dockerfile scanning)
+# that populate the project's Security Dashboard. Without these includes, the
+# dashboard is never refreshed by the pipeline.
+include:
+  - template: Jobs/Dependency-Scanning.gitlab-ci.yml
+  - template: Jobs/SAST.gitlab-ci.yml
+  - template: Jobs/SAST-IaC.gitlab-ci.yml
+
+stages:
+  - scan
+  - test
+  - prepare
+  - build
+  - deploy
+
+variables:
+  AWS_DEFAULT_REGION: us-east-1
+  ECR_REPOSITORY: agentcore-debugger
+  APP_NAME: "acd"
+  APP_VERSION: "2.0.0"
+  IMAGE_TAG: $CI_COMMIT_SHORT_SHA
+  # Enable GitLab Advanced SAST (matches the scanner in the prior security report)
+  GITLAB_ADVANCED_SAST_ENABLED: "true"
+
+# ============================================================================
+# SCAN STAGE
+# ============================================================================
+
+sast-scan:
+  stage: scan
+  tags:
+    - arch:amd64
+  image: python:3.11-slim
+  before_script:
+    - pip install bandit safety --quiet
+  script:
+    - bandit -r backend/app -f txt -ll || true
+    - cd backend && pip install -r requirements.txt --quiet && safety check --full-report || true
+  allow_failure: true
+  only:
+    - main
+    - develop
+    - gitops
+
+frontend-lint:
+  stage: scan
+  tags:
+    - arch:amd64
+  image: node:20-alpine
+  variables:
+    NODE_OPTIONS: "--max-old-space-size=512"
+  before_script:
+    - cd frontend && npm ci --quiet
+  script:
+    - npx tsc --noEmit 2>&1 | tail -20 || true
+    - npm run lint 2>&1 || true
+  allow_failure: true
+  only:
+    - main
+    - develop
+    - gitops
+
+# ============================================================================
+# PREPARE STAGE
+# ============================================================================
+
+prepare-ecr:
+  stage: prepare
+  tags:
+    - arch:amd64
+  image: amazon/aws-cli:latest
+  script:
+    - |
+      aws ecr describe-repositories --repository-names $ECR_REPOSITORY-backend --region $AWS_DEFAULT_REGION 2>/dev/null || \
+      aws ecr create-repository --repository-name $ECR_REPOSITORY-backend --region $AWS_DEFAULT_REGION
+  only:
+    - main
+    - develop
+    - gitops
+
+# ============================================================================
+# BUILD STAGE
+# ============================================================================
+
+build-backend:
+  stage: build
+  tags:
+    - arch:amd64
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.0-debug
+    entrypoint: [""]
+  before_script:
+    - mkdir -p /kaniko/.docker
+    - |
+      cat > /kaniko/.docker/config.json <<EOF
+      {
+        "credHelpers": {
+          "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com": "ecr-login"
+        }
+      }
+      EOF
+  script:
+    - export ECR_BASE=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_REPOSITORY-backend
+    - |
+      /kaniko/executor \
+        --context $CI_PROJECT_DIR \
+        --dockerfile $CI_PROJECT_DIR/backend/Dockerfile \
+        --destination $ECR_BASE:$APP_NAME-v$APP_VERSION-$CI_COMMIT_SHORT_SHA \
+        --destination $ECR_BASE:$APP_NAME-latest \
+        --destination $ECR_BASE:latest \
+        --cache=true \
+        --cache-repo=$ECR_BASE/cache \
+        --single-snapshot \
+        --compressed-caching=false
+  only:
+    - main
+    - develop
+    - gitops
+
+# ============================================================================
+# DEPLOY STAGE
+# Deploys infra + frontend (S3) + backend (ECS) in one job.
+# The CF template is synthesized fresh in the pipeline via 'cdk synth'
+# (no cdk.out committed to the repo — keeps account IDs/ARNs out of git).
+# ============================================================================
+
+deploy:
+  stage: deploy
+  tags:
+    - arch:amd64
+  image: amazon/aws-cli:latest
+  variables:
+    NODE_OPTIONS: "--max-old-space-size=1024"
+  needs:
+    - build-backend
+  before_script:
+    - yum install -y nodejs npm tar gzip python3 python3-pip --quiet
+    - npm install -g aws-cdk
+  script:
+    - export STACK_NAME=AgentCoreDebuggerStack
+
+    # ── Step 0: Synthesize CF template fresh from CDK code ──
+    - echo "🧱 Synthesizing CloudFormation template with cdk synth..."
+    - cd cdk
+    - pip3 install -r requirements.txt --quiet
+    - cdk synth AgentCoreDebuggerStack --quiet
+    - cd ..
+    - test -f cdk/cdk.out/AgentCoreDebuggerStack.template.json || (echo "❌ cdk synth did not produce a template" && exit 1)
+
+    # ── Step 1: Deploy infrastructure (CF template) ──
+    # Use the CDK bootstrap bucket (already exists from 'cdk bootstrap')
+    - export CDK_BUCKET=$(aws cloudformation describe-stacks --stack-name CDKToolkit --query 'Stacks[0].Outputs[?OutputKey==`BucketName`].OutputValue' --output text 2>/dev/null || echo "")
+    - |
+      if [ -f cdk/cdk.out/AgentCoreDebuggerStack.template.json ]; then
+        echo "📦 Deploying CloudFormation stack..."
+        if [ -n "$CDK_BUCKET" ] && [ "$CDK_BUCKET" != "None" ]; then
+          echo "Using CDK bootstrap bucket: $CDK_BUCKET"
+          CFN_ROLE="arn:aws:iam::${AWS_ACCOUNT_ID}:role/cdk-hnb659fds-cfn-exec-role-${AWS_ACCOUNT_ID}-${AWS_DEFAULT_REGION}"
+          echo "Using CFN execution role: $CFN_ROLE"
+          aws cloudformation deploy \
+            --template-file cdk/cdk.out/AgentCoreDebuggerStack.template.json \
+            --stack-name $STACK_NAME \
+            --s3-bucket $CDK_BUCKET \
+            --s3-prefix agentcore-debugger-cfn \
+            --role-arn $CFN_ROLE \
+            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
+            --parameter-overrides \
+              AlertEmail="${ALERT_EMAIL:-}" \
+              BackendCPU="${BACKEND_CPU:-512}" \
+              BackendMemory="${BACKEND_MEMORY:-1024}" \
+              BackendDesiredCount="${BACKEND_DESIRED_COUNT:-1}" \
+            --no-fail-on-empty-changeset
+        else
+          echo "❌ CDK bootstrap bucket not found. Run 'cdk bootstrap' first."
+          exit 1
+        fi
+        echo "✅ Infrastructure deployed"
+      else
+        echo "⚠️ No CF template found — skipping infra deploy"
+      fi
+
+    # ── Step 2: Get stack outputs ──
+    - export CLOUDFRONT_URL=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].Outputs[?OutputKey==`ApplicationURL`].OutputValue' --output text)
+    - export CLOUDFRONT_DIST=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontDistributionId`].OutputValue' --output text)
+    - export FRONTEND_BUCKET=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].Outputs[?OutputKey==`FrontendBucketName`].OutputValue' --output text)
+    - export ECS_CLUSTER=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].Outputs[?OutputKey==`ECSClusterName`].OutputValue' --output text)
+    - export COGNITO_DOMAIN_PREFIX=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].Outputs[?OutputKey==`CognitoDomain`].OutputValue' --output text)
+    - export VITE_COGNITO_DOMAIN="https://${COGNITO_DOMAIN_PREFIX}.auth.${AWS_DEFAULT_REGION}.amazoncognito.com"
+
+    # ── Step 3: Build and deploy frontend to S3 ──
+    - echo "📦 Building React frontend..."
+    - echo "   Cognito hosted-UI domain:" $VITE_COGNITO_DOMAIN
+    - cd frontend
+    - npm ci --quiet
+    - npm run build
+    - aws s3 sync dist/ s3://$FRONTEND_BUCKET --delete
+    - cd ..
+
+    # ── Step 4: Force new ECS deployment ──
+    - |
+      ECS_SERVICE=$(aws ecs list-services --cluster $ECS_CLUSTER --query 'serviceArns[0]' --output text)
+      if [ "$ECS_SERVICE" != "None" ] && [ -n "$ECS_SERVICE" ]; then
+        aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --force-new-deployment --query 'service.serviceName' --output text
+        echo "✅ ECS service update triggered"
+      fi
+
+    # ── Step 5: Invalidate CloudFront cache ──
+    - aws cloudfront create-invalidation --distribution-id $CLOUDFRONT_DIST --paths "/*" --query 'Invalidation.Id' --output text
+
+    - echo "=========================================="
+    - echo "✅ Deployment Complete!"
+    - echo "🌐 URL:" $CLOUDFRONT_URL
+    - echo "=========================================="
+  only:
+    - main
+    - gitops
+  when: manual
